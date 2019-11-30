@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	isec_conf_rsa "github.com/rhernandez-itemsoft/ihelpers/isecurity/configrsa"
-	isecuritystt "github.com/rhernandez-itemsoft/ihelpers/isecurity/structs"
+	isecuritystt "github.com/rhernandez-itemsoft/ihelpers/isecurity/isecuritystt"
 
 	"github.com/kataras/iris/v12"
 	"github.com/mitchellh/mapstructure"
