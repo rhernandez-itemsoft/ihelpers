@@ -1,8 +1,8 @@
 package isec_conf_rsa
 
 import (
-	"ihelpers/icommon"
-	isecuritystt "ihelpers/isecurity/structs"
+	"github.com/rhernandez-itemsoft/ihelpers/icommon"
+	isecuritystt "github.com/rhernandez-itemsoft/ihelpers/isecurity/structs"
 )
 
 //DefaultConfig regresa la configuración por default

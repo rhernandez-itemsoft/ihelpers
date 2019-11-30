@@ -6,8 +6,8 @@ import (
 	"log"
 	"strings"
 
-	isec_conf_rsa "ihelpers/isecurity/configrsa"
-	isecuritystt "ihelpers/isecurity/structs"
+	isec_conf_rsa "github.com/rhernandez-itemsoft/ihelpers/isecurity/configrsa"
+	isecuritystt "github.com/rhernandez-itemsoft/ihelpers/isecurity/structs"
 
 	"github.com/kataras/iris/v12"
 	"github.com/mitchellh/mapstructure"

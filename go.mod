@@ -3,7 +3,6 @@ module github.com/rhernandez-itemsoft/ihelpers
 go 1.13
 
 require (
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/kataras/iris/v12 v12.0.1
 	github.com/mitchellh/mapstructure v1.1.2
 	gopkg.in/dgrijalva/jwt-go.v3 v3.2.0

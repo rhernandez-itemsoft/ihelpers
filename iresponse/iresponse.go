@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/kataras/iris/v12"
 	"github.com/kataras/iris/v12/middleware/i18n"
-	"ihelpers/iresponse/structs"
+	"github.com/rhernandez-itemsoft/ihelpers/iresponse/structs"
 )
 
 //Definition esto se inyecta
