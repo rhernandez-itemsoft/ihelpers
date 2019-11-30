@@ -1,4 +1,4 @@
-module github.com/rhernandez-itemsoft/ihelpers.git
+module github.com/rhernandez-itemsoft/ihelpers
 
 go 1.13
 
