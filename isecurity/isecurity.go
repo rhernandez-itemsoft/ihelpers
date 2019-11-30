@@ -13,7 +13,7 @@ import (
 
 	"github.com/rhernandez-itemsoft/ihelpers/ijwt"
 	"github.com/rhernandez-itemsoft/ihelpers/iresponse"
-	isecuritystt "github.com/rhernandez-itemsoft/ihelpers/isecurity/structs"
+	"github.com/rhernandez-itemsoft/ihelpers/isecurity/isecuritystt"
 
 	"github.com/kataras/iris/v12"
 	"gopkg.in/dgrijalva/jwt-go.v3"
