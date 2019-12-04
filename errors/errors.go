@@ -1,6 +1,7 @@
 package errors
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -13,4 +14,9 @@ func Catch(err error, _exit ...bool) {
 			os.Exit(0)
 		}
 	}
+}
+
+//New crea  un error
+func New(_err string) error {
+	return errors.New(_err)
 }
