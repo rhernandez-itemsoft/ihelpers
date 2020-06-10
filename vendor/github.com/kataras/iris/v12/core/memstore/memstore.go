@@ -173,6 +173,7 @@ func (e Entry) IntDefault(def int) (int, error) {
 		return int(vv), nil
 	case int64:
 		return int(vv), nil
+
 	case uint:
 		return int(vv), nil
 	case uint8:
@@ -213,6 +214,17 @@ func (e Entry) Int8Default(def int8) (int8, error) {
 		return int8(vv), nil
 	case int64:
 		return int8(vv), nil
+
+	case uint:
+		return int8(vv), nil
+	case uint8:
+		return int8(vv), nil
+	case uint16:
+		return int8(vv), nil
+	case uint32:
+		return int8(vv), nil
+	case uint64:
+		return int8(vv), nil
 	}
 
 	return def, e.notFound(reflect.Int8)
@@ -242,6 +254,17 @@ func (e Entry) Int16Default(def int16) (int16, error) {
 	case int32:
 		return int16(vv), nil
 	case int64:
+		return int16(vv), nil
+
+	case uint:
+		return int16(vv), nil
+	case uint8:
+		return int16(vv), nil
+	case uint16:
+		return int16(vv), nil
+	case uint32:
+		return int16(vv), nil
+	case uint64:
 		return int16(vv), nil
 	}
 
@@ -297,6 +320,17 @@ func (e Entry) Int64Default(def int64) (int64, error) {
 		return int64(vv), nil
 	case int:
 		return int64(vv), nil
+
+	case uint:
+		return int64(vv), nil
+	case uint8:
+		return int64(vv), nil
+	case uint16:
+		return int64(vv), nil
+	case uint32:
+		return int64(vv), nil
+	case uint64:
+		return int64(vv), nil
 	}
 
 	return def, e.notFound(reflect.Int64)
@@ -343,6 +377,14 @@ func (e Entry) UintDefault(def uint) (uint, error) {
 		if vv < 0 || vv > int(maxValue) {
 			return def, e.notFound(reflect.Uint)
 		}
+		return uint(vv), nil
+	case int8:
+		return uint(vv), nil
+	case int16:
+		return uint(vv), nil
+	case int32:
+		return uint(vv), nil
+	case int64:
 		return uint(vv), nil
 	}
 
@@ -669,7 +711,7 @@ func (r *Store) Save(key string, value interface{}, immutable bool) (Entry, bool
 				// we should allow this
 				kv.ValueRaw = value
 				kv.immutable = immutable
-			} else if kv.immutable == false {
+			} else if !kv.immutable {
 				// if it was not immutable then user can alt it via `Set` and `SetImmutable`
 				kv.ValueRaw = value
 				kv.immutable = immutable

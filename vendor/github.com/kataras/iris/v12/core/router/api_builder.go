@@ -1,7 +1,7 @@
 package router
 
 import (
-	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -40,66 +40,6 @@ var AllMethods = []string{
 type repository struct {
 	routes []*Route
 	pos    map[string]int
-}
-
-func (repo *repository) remove(route *Route) bool {
-	for i, r := range repo.routes {
-		if r == route {
-			return repo.removeByIndex(i)
-		}
-	}
-
-	return false
-}
-
-func (repo *repository) removeByPath(tmplPath string) bool {
-	if repo.pos != nil {
-		if idx, ok := repo.pos[tmplPath]; ok {
-			return repo.removeByIndex(idx)
-		}
-	}
-
-	return false
-}
-
-func (repo *repository) removeByName(routeName string) bool {
-	for i, r := range repo.routes {
-		if r.Name == routeName {
-			return repo.removeByIndex(i)
-		}
-	}
-
-	return false
-}
-
-func (repo *repository) removeByIndex(idx int) bool {
-	n := len(repo.routes)
-
-	if n == 0 {
-		return false
-	}
-
-	if idx >= n {
-		return false
-	}
-
-	if n == 1 && idx == 0 {
-		repo.routes = repo.routes[0:0]
-		repo.pos = nil
-		return true
-	}
-
-	r := repo.routes[idx]
-	if r == nil {
-		return false
-	}
-
-	repo.routes = append(repo.routes[:idx], repo.routes[idx+1:]...)
-	if repo.pos != nil {
-		delete(repo.pos, r.Path)
-	}
-
-	return true
 }
 
 func (repo *repository) get(routeName string) *Route {
@@ -141,13 +81,20 @@ func (repo *repository) getAll() []*Route {
 	return repo.routes
 }
 
-func (repo *repository) register(route *Route) {
+func (repo *repository) register(route *Route, rule RouteRegisterRule) (*Route, error) {
 	for i, r := range repo.routes {
 		// 14 August 2019 allow register same path pattern with different macro functions,
 		// see #1058
 		if route.DeepEqual(r) {
-			// replace existing with the latest one.
-			repo.routes = append(repo.routes[:i], repo.routes[i+1:]...)
+			if rule == RouteSkip {
+				return r, nil
+			} else if rule == RouteError {
+				return nil, fmt.Errorf("new route: %s conflicts with an already registered one: %s route", route.String(), r.String())
+			} else {
+				// replace existing with the latest one, the default behavior.
+				repo.routes = append(repo.routes[:i], repo.routes[i+1:]...)
+			}
+
 			continue
 		}
 	}
@@ -158,15 +105,7 @@ func (repo *repository) register(route *Route) {
 	}
 
 	repo.pos[route.tmpl.Src] = len(repo.routes) - 1
-}
-
-type apiError struct {
-	error
-}
-
-func (e *apiError) Is(err error) bool {
-	_, ok := err.(*apiError)
-	return ok
+	return route, nil
 }
 
 // APIBuilder the visible API for constructing the router
@@ -179,9 +118,6 @@ type APIBuilder struct {
 	// the api builder global routes repository
 	routes *repository
 
-	// the api builder global route path reverser object
-	// used by the view engine but it can be used anywhere.
-	reverser *RoutePathReverser
 	// the api builder global errors, can be filled by the Subdomain, WildcardSubdomain, Handle...
 	// the list of possible errors that can be
 	// collected on the build state to log
@@ -213,6 +149,8 @@ type APIBuilder struct {
 
 	// the per-party (and its children) execution rules for begin, main and done handlers.
 	handlerExecutionRules ExecutionRules
+	// the per-party (and its children) route registration rule, see `SetRegisterRule`.
+	routeRegisterRule RouteRegisterRule
 }
 
 var _ Party = (*APIBuilder)(nil)
@@ -283,11 +221,35 @@ func (api *APIBuilder) SetExecutionRules(executionRules ExecutionRules) Party {
 	return api
 }
 
-func (api *APIBuilder) createRoutes(methods []string, relativePath string, handlers ...context.Handler) []*Route {
-	// if relativePath[0] != '/' {
-	// 	return nil, errors.New("path should start with slash and should not be empty")
-	// }
+// RouteRegisterRule is a type of uint8.
+// Defines the register rule for new routes that already exists.
+// Available values are: RouteOverride, RouteSkip and RouteError.
+//
+// See `Party#SetRegisterRule`.
+type RouteRegisterRule uint8
 
+const (
+	// RouteOverride an existing route with the new one, the default rule.
+	RouteOverride RouteRegisterRule = iota
+	// RouteSkip registering a new route twice.
+	RouteSkip
+	// RouteError log when a route already exists, shown after the `Build` state,
+	// server never starts.
+	RouteError
+)
+
+// SetRegisterRule sets a `RouteRegisterRule` for this Party and its children.
+// Available values are: RouteOverride (the default one), RouteSkip and RouteError.
+func (api *APIBuilder) SetRegisterRule(rule RouteRegisterRule) Party {
+	api.routeRegisterRule = rule
+	return api
+}
+
+// CreateRoutes returns a list of Party-based Routes.
+// It does NOT registers the route. Use `Handle, Get...` methods instead.
+// This method can be used for third-parties Iris helpers packages and tools
+// that want a more detailed view of Party-based Routes before take the decision to register them.
+func (api *APIBuilder) CreateRoutes(methods []string, relativePath string, handlers ...context.Handler) []*Route {
 	if len(methods) == 0 || methods[0] == "ALL" || methods[0] == "ANY" { // then use like it was .Any
 		return api.Any(relativePath, handlers...)
 	}
@@ -340,7 +302,7 @@ func (api *APIBuilder) createRoutes(methods []string, relativePath string, handl
 	// if allowMethods are empty, then simply register with the passed, main, method.
 	methods = append(api.allowMethods, methods...)
 
-	routes := make([]*Route, len(methods), len(methods))
+	routes := make([]*Route, len(methods))
 
 	for i, m := range methods {
 		route, err := NewRoute(m, subdomain, path, possibleMainHandlerName, routeHandlers, *api.macros)
@@ -393,14 +355,21 @@ func getCaller() (string, int) {
 //
 // Returns a *Route, app will throw any errors later on.
 func (api *APIBuilder) Handle(method string, relativePath string, handlers ...context.Handler) *Route {
-	routes := api.createRoutes([]string{method}, relativePath, handlers...)
+	routes := api.CreateRoutes([]string{method}, relativePath, handlers...)
 
 	var route *Route // the last one is returned.
+	var err error
 	for _, route = range routes {
+		if route == nil {
+			break
+		}
 		// global
 
 		route.topLink = api.routes.getRelative(route)
-		api.routes.register(route)
+		if route, err = api.routes.register(route, api.routeRegisterRule); err != nil {
+			api.errors.Add(err)
+			break
+		}
 	}
 
 	return route
@@ -470,7 +439,7 @@ func (api *APIBuilder) HandleDir(requestPath, directory string, opts ...DirOptio
 	}
 
 	requestPath = joinPath(requestPath, WildcardFileParam())
-	routes := api.createRoutes([]string{http.MethodGet, http.MethodHead}, requestPath, h)
+	routes := api.CreateRoutes([]string{http.MethodGet, http.MethodHead}, requestPath, h)
 	getRoute = routes[0]
 	// we get all index, including sub directories even if those
 	// are already managed by the static handler itself.
@@ -485,13 +454,32 @@ func (api *APIBuilder) HandleDir(requestPath, directory string, opts ...DirOptio
 			continue
 		}
 
-		routes = append(routes, api.createRoutes([]string{http.MethodGet}, s.RequestPath, h)...)
+		if n := len(api.relativePath); n > 0 && api.relativePath[n-1] == SubdomainPrefix[0] {
+			// this api is a subdomain-based.
+			slashIdx := strings.IndexByte(s.RequestPath, '/')
+			if slashIdx == -1 {
+				slashIdx = 0
+			}
+
+			requestPath = s.RequestPath[slashIdx:]
+		} else {
+			requestPath = s.RequestPath[strings.Index(s.RequestPath, api.relativePath)+len(api.relativePath):]
+		}
+
+		if requestPath == "" {
+			requestPath = "/"
+		}
+
+		routes = append(routes, api.CreateRoutes([]string{http.MethodGet}, requestPath, h)...)
 		getRoute.StaticSites = append(getRoute.StaticSites, s)
 	}
 
 	for _, route := range routes {
 		route.MainHandlerName = `HandleDir(directory: "` + directory + `")`
-		api.routes.register(route)
+		if _, err := api.routes.register(route, api.routeRegisterRule); err != nil {
+			api.errors.Add(err)
+			break
+		}
 	}
 
 	return getRoute
@@ -546,6 +534,7 @@ func (api *APIBuilder) Party(relativePath string, handlers ...context.Handler) P
 		relativePath:          fullpath,
 		allowMethods:          allowMethods,
 		handlerExecutionRules: api.handlerExecutionRules,
+		routeRegisterRule:     api.routeRegisterRule,
 	}
 }
 
@@ -694,7 +683,7 @@ func (api *APIBuilder) Use(handlers ...context.Handler) {
 // It doesn't care about call order, it will prepend the handlers to all
 // existing routes and the future routes that may being registered.
 //
-// The difference from `.DoneGLobal` is that this/or these Handler(s) are being always running first.
+// The difference from `.DoneGlobal` is that this/or these Handler(s) are being always running first.
 // Use of `ctx.Next()` of those handler(s) is necessary to call the main handler or the next middleware.
 // It's always a good practise to call it right before the `Application#Run` function.
 func (api *APIBuilder) UseGlobal(handlers ...context.Handler) {
@@ -740,6 +729,7 @@ func (api *APIBuilder) Reset() Party {
 	api.middleware = api.middleware[0:0]
 	api.doneHandlers = api.doneHandlers[0:0]
 	api.handlerExecutionRules = ExecutionRules{}
+	api.routeRegisterRule = RouteOverride
 	return api
 }
 
@@ -849,9 +839,6 @@ func (api *APIBuilder) StaticContent(reqPath string, cType string, content []byt
 	return api.registerResourceRoute(reqPath, h)
 }
 
-// errDirectoryFileNotFound returns an error with message: 'Directory or file %s couldn't found. Trace: +error trace'
-var errDirectoryFileNotFound = errors.New("Directory or file %s couldn't found. Trace: %s")
-
 // Favicon serves static favicon
 // accepts 2 parameters, second is optional
 // favPath (string), declare the system directory path of the __.ico
@@ -909,7 +896,7 @@ func (api *APIBuilder) Favicon(favPath string, requestPath ...string) *Route {
 
 // OnErrorCode registers an error http status code
 // based on the "statusCode" < 200 || >= 400 (came from `context.StatusCodeNotSuccessful`).
-// The handler is being wrapepd by a generic
+// The handler is being wrapped by a generic
 // handler which will try to reset
 // the body if recorder was enabled
 // and/or disable the gzip if gzip response recorder

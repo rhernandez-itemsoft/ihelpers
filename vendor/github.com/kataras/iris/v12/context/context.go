@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,7 +31,7 @@ import (
 	"github.com/iris-contrib/schema"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/microcosm-cc/bluemonday"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type (
@@ -76,7 +77,7 @@ func (u UnmarshalerFunc) Unmarshal(data []byte, v interface{}) error {
 	return u(data, v)
 }
 
-// Context is the midle-man server's "object" for the clients.
+// Context is the midle-man server's "object" dealing with incoming requests.
 //
 // A New context is being acquired from a sync.Pool on each connection.
 // The Context is the most important thing on the iris's http flow.
@@ -292,15 +293,9 @@ type Context interface {
 	// You can use this function to Set and Get local values
 	// that can be used to share information between handlers and middleware.
 	Values() *memstore.Store
-	// Translate is the i18n (localization) middleware's function,
-	// it calls the Values().Get(ctx.Application().ConfigurationReadOnly().GetTranslateFunctionContextKey())
-	// to execute the translate function and return the localized text value.
-	//
-	// Example: https://github.com/kataras/iris/tree/master/_examples/miscellaneous/i18n
-	Translate(format string, args ...interface{}) string
 
 	//  +------------------------------------------------------------+
-	//  | Path, Host, Subdomain, IP, Headers etc...                  |
+	//  | Path, Host, Subdomain, IP, Headers, Localization etc...    |
 	//  +------------------------------------------------------------+
 
 	// Method returns the request.Method, the client's http method to the server.
@@ -316,6 +311,12 @@ type Context interface {
 	// Subdomain returns the subdomain of this request, if any.
 	// Note that this is a fast method which does not cover all cases.
 	Subdomain() (subdomain string)
+	// FindClosest returns a list of "n" paths close to
+	// this request based on subdomain and request path.
+	//
+	// Order may change.
+	// Example: https://github.com/kataras/iris/tree/master/_examples/routing/not-found-suggests
+	FindClosest(n int) []string
 	// IsWWW returns true if the current subdomain (if any) is www.
 	IsWWW() bool
 	// FullRqeuestURI returns the full URI,
@@ -355,10 +356,20 @@ type Context interface {
 	//
 	// Keep note that this checks the "User-Agent" request header.
 	IsMobile() bool
+	// IsScript reports whether a client is a script.
+	IsScript() bool
 	// GetReferrer extracts and returns the information from the "Referer" header as specified
 	// in https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy
 	// or by the URL query parameter "referer".
 	GetReferrer() Referrer
+	// GetLocale returns the current request's `Locale` found by i18n middleware.
+	// See `Tr` too.
+	GetLocale() Locale
+	// Tr returns a i18n localized message based on format with optional arguments.
+	// See `GetLocale` too.
+	// Example: https://github.com/kataras/iris/tree/master/_examples/i18n
+	Tr(format string, args ...interface{}) string
+
 	//  +------------------------------------------------------------+
 	//  | Headers helpers                                            |
 	//  +------------------------------------------------------------+
@@ -984,6 +995,10 @@ type Context interface {
 	// It will search from the current subdomain of context's host, if not inside the root domain.
 	RouteExists(method, path string) bool
 
+	// ReflectValue caches and returns a []reflect.Value{reflect.ValueOf(ctx)}.
+	// It's just a helper to maintain variable inside the context itself.
+	ReflectValue() []reflect.Value
+
 	// Application returns the iris app instance which belongs to this context.
 	// Worth to notice that this function returns an interface
 	// of the Application, which contains methods that are safe
@@ -1497,19 +1512,6 @@ func (ctx *context) Values() *memstore.Store {
 	return &ctx.values
 }
 
-// Translate is the i18n (localization) middleware's function,
-// it calls the Values().Get(ctx.Application().ConfigurationReadOnly().GetTranslateFunctionContextKey())
-// to execute the translate function and return the localized text value.
-//
-// Example: https://github.com/kataras/iris/tree/master/_examples/miscellaneous/i18n
-func (ctx *context) Translate(format string, args ...interface{}) string {
-	if cb, ok := ctx.values.Get(ctx.Application().ConfigurationReadOnly().GetTranslateFunctionContextKey()).(func(format string, args ...interface{}) string); ok {
-		return cb(format, args...)
-	}
-
-	return ""
-}
-
 //  +------------------------------------------------------------+
 //  | Path, Host, Subdomain, IP, Headers etc...                  |
 //  +------------------------------------------------------------+
@@ -1611,6 +1613,15 @@ func (ctx *context) Subdomain() (subdomain string) {
 	return
 }
 
+// FindClosest returns a list of "n" paths close to
+// this request based on subdomain and request path.
+//
+// Order may change.
+// Example: https://github.com/kataras/iris/tree/master/_examples/routing/not-found-suggests
+func (ctx *context) FindClosest(n int) []string {
+	return ctx.Application().FindClosestPaths(ctx.Subdomain(), ctx.Path(), n)
+}
+
 // IsWWW returns true if the current subdomain (if any) is www.
 func (ctx *context) IsWWW() bool {
 	host := ctx.Host()
@@ -1696,7 +1707,7 @@ func (ctx *context) IsAjax() bool {
 	return ctx.GetHeader("X-Requested-With") == "XMLHttpRequest"
 }
 
-var isMobileRegex = regexp.MustCompile(`(?i)(android|avantgo|blackberry|bolt|boost|cricket|docomo|fone|hiptop|mini|mobi|palm|phone|pie|tablet|up\.browser|up\.link|webos|wos)`)
+var isMobileRegex = regexp.MustCompile("(?:hpw|i|web)os|alamofire|alcatel|amoi|android|avantgo|blackberry|blazer|cell|cfnetwork|darwin|dolfin|dolphin|fennec|htc|ip(?:hone|od|ad)|ipaq|j2me|kindle|midp|minimo|mobi|motorola|nec-|netfront|nokia|opera m(ob|in)i|palm|phone|pocket|portable|psp|silk-accelerated|skyfire|sony|ucbrowser|up.browser|up.link|windows ce|xda|zte|zune")
 
 // IsMobile checks if client is using a mobile device(phone or tablet) to communicate with this server.
 // If the return value is true that means that the http client using a mobile
@@ -1704,8 +1715,16 @@ var isMobileRegex = regexp.MustCompile(`(?i)(android|avantgo|blackberry|bolt|boo
 //
 // Keep note that this checks the "User-Agent" request header.
 func (ctx *context) IsMobile() bool {
-	s := ctx.GetHeader("User-Agent")
+	s := strings.ToLower(ctx.GetHeader("User-Agent"))
 	return isMobileRegex.MatchString(s)
+}
+
+var isScriptRegex = regexp.MustCompile("curl|wget|collectd|python|urllib|java|jakarta|httpclient|phpcrawl|libwww|perl|go-http|okhttp|lua-resty|winhttp|awesomium")
+
+// IsScript reports whether a client is a script.
+func (ctx *context) IsScript() bool {
+	s := strings.ToLower(ctx.GetHeader("User-Agent"))
+	return isScriptRegex.MatchString(s)
 }
 
 type (
@@ -1778,6 +1797,36 @@ func (ctx *context) GetReferrer() Referrer {
 	return emptyReferrer
 }
 
+// GetLocale returns the current request's `Locale` found by i18n middleware.
+// See `Tr` too.
+func (ctx *context) GetLocale() Locale {
+	contextKey := ctx.app.ConfigurationReadOnly().GetLocaleContextKey()
+	if v := ctx.Values().Get(contextKey); v != nil {
+		if locale, ok := v.(Locale); ok {
+			return locale
+		}
+	}
+
+	if locale := ctx.Application().I18nReadOnly().GetLocale(ctx); locale != nil {
+		ctx.Values().Set(contextKey, locale)
+		return locale
+	}
+
+	return nil
+}
+
+// Tr returns a i18n localized message based on format with optional arguments.
+// See `GetLocale` too.
+//
+// Example: https://github.com/kataras/iris/tree/master/_examples/i18n
+func (ctx *context) Tr(format string, args ...interface{}) string { // other name could be: Localize.
+	if locale := ctx.GetLocale(); locale != nil { // TODO: here... I need to change the logic, if not found then call the i18n's get locale and set the value in order to be fastest on routes that are not using (no need to reigster a middleware.)
+		return locale.GetMessage(format, args...)
+	}
+
+	return fmt.Sprintf(format, args...)
+}
+
 //  +------------------------------------------------------------+
 //  | Response Headers helpers                                   |
 //  +------------------------------------------------------------+
@@ -1794,12 +1843,16 @@ func (ctx *context) Header(name string, value string) {
 
 const contentTypeContextKey = "_iris_content_type"
 
+func shouldAppendCharset(cType string) bool {
+	return cType != ContentBinaryHeaderValue && cType != ContentWebassemblyHeaderValue
+}
+
 func (ctx *context) contentTypeOnce(cType string, charset string) {
 	if charset == "" {
 		charset = ctx.Application().ConfigurationReadOnly().GetCharset()
 	}
 
-	if cType != ContentBinaryHeaderValue {
+	if shouldAppendCharset(cType) {
 		cType += "; charset=" + charset
 	}
 
@@ -1825,7 +1878,7 @@ func (ctx *context) ContentType(cType string) {
 	}
 	// if doesn't contain a charset already then append it
 	if !strings.Contains(cType, "charset") {
-		if cType != ContentBinaryHeaderValue {
+		if shouldAppendCharset(cType) {
 			cType += "; charset=" + ctx.Application().ConfigurationReadOnly().GetCharset()
 		}
 	}
@@ -3034,6 +3087,8 @@ func (ctx *context) View(filename string, optionalViewModel ...interface{}) erro
 const (
 	// ContentBinaryHeaderValue header value for binary data.
 	ContentBinaryHeaderValue = "application/octet-stream"
+	// ContentWebassemblyHeaderValue header value for web assembly files.
+	ContentWebassemblyHeaderValue = "application/wasm"
 	// ContentHTMLHeaderValue is the  string of text/html response header's content type value.
 	ContentHTMLHeaderValue = "text/html"
 	// ContentJSONHeaderValue header value for JSON data.
@@ -3218,7 +3273,10 @@ var finishCallbackB = []byte(");")
 // WriteJSONP marshals the given interface object and writes the JSON response to the writer.
 func WriteJSONP(writer io.Writer, v interface{}, options JSONP, enableOptimization ...bool) (int, error) {
 	if callback := options.Callback; callback != "" {
-		writer.Write([]byte(callback + "("))
+		n, err := writer.Write([]byte(callback + "("))
+		if err != nil {
+			return n, err
+		}
 		defer writer.Write(finishCallbackB)
 	}
 
@@ -3308,7 +3366,10 @@ func (m xmlMap) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	}
 
 	for k, v := range m.entries {
-		e.Encode(xmlMapEntry{XMLName: xml.Name{Local: k}, Value: v})
+		err = e.Encode(xmlMapEntry{XMLName: xml.Name{Local: k}, Value: v})
+		if err != nil {
+			return err
+		}
 	}
 
 	return e.EncodeToken(start.End())
@@ -3317,7 +3378,10 @@ func (m xmlMap) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 // WriteXML marshals the given interface object and writes the XML response to the writer.
 func WriteXML(writer io.Writer, v interface{}, options XML) (int, error) {
 	if prefix := options.Prefix; prefix != "" {
-		writer.Write([]byte(prefix))
+		n, err := writer.Write([]byte(prefix))
+		if err != nil {
+			return n, err
+		}
 	}
 
 	if indent := options.Indent; indent != "" {
@@ -4547,6 +4611,22 @@ func (ctx *context) Exec(method string, path string) {
 // It will search from the current subdomain of context's host, if not inside the root domain.
 func (ctx *context) RouteExists(method, path string) bool {
 	return ctx.Application().RouteExists(ctx, method, path)
+}
+
+const (
+	reflectValueContextKey = "_iris_context_reflect_value"
+)
+
+// ReflectValue caches and returns a []reflect.Value{reflect.ValueOf(ctx)}.
+// It's just a helper to maintain variable inside the context itself.
+func (ctx *context) ReflectValue() []reflect.Value {
+	if v := ctx.Values().Get(reflectValueContextKey); v != nil {
+		return v.([]reflect.Value)
+	}
+
+	v := []reflect.Value{reflect.ValueOf(ctx)}
+	ctx.Values().Set(reflectValueContextKey, v)
+	return v
 }
 
 // Application returns the iris app instance which belongs to this context.

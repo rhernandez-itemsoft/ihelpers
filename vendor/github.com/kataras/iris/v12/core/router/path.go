@@ -62,13 +62,6 @@ func prefix(s string, prefix string) string {
 	return s
 }
 
-func suffix(s string, suffix string) string {
-	if !strings.HasSuffix(s, suffix) {
-		return s + suffix
-	}
-	return s
-}
-
 func splitMethod(methodMany string) []string {
 	methodMany = strings.Trim(methodMany, " ")
 	return strings.Split(methodMany, " ")
@@ -231,6 +224,11 @@ func splitSubdomainAndPath(fullUnparsedPath string) (subdomain string, path stri
 		return "", "/"
 	}
 
+	splitPath := strings.Split(s, ".")
+	if len(splitPath) == 2 && splitPath[1] == "" {
+		return splitPath[0] + ".", "/"
+	}
+
 	slashIdx := strings.IndexByte(s, '/')
 	if slashIdx > 0 {
 		// has subdomain
@@ -343,7 +341,7 @@ func toStringSlice(args []interface{}) (argsString []string) {
 		return
 	}
 
-	argsString = make([]string, argsSize, argsSize)
+	argsString = make([]string, argsSize)
 	for i, v := range args {
 		if s, ok := v.(string); ok {
 			argsString[i] = s

@@ -2,8 +2,8 @@ package iresponse
 
 import (
 	"fmt"
+
 	"github.com/kataras/iris/v12"
-	"github.com/kataras/iris/v12/middleware/i18n"
 	"github.com/rhernandez-itemsoft/ihelpers/iresponse/iresponsestt"
 )
 
@@ -31,7 +31,7 @@ func (def *Definition) JSON(_response iresponsestt.Response) {
 	def.Ctx.StatusCode(200)
 	def.Ctx.JSON(_response)
 }
-
+//JSONResponse retorna una respuesta JSON
 func (def *Definition) JSONResponse(statusCode int, data interface{}, iMessages ...string) {
 	var msgs []string
 
@@ -41,7 +41,8 @@ func (def *Definition) JSONResponse(statusCode int, data interface{}, iMessages 
 		msgs = append(msgs, strErr)
 	} else {
 		for _, message := range iMessages {
-			msg := i18n.Translate(def.Ctx, message)
+			msg := def.Ctx.Values().GetString(message)
+			//msg := i18n.con (def.Ctx, message)
 
 			if msg == "" {
 				msgs = append(msgs, message)

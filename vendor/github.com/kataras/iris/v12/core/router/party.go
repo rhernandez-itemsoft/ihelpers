@@ -98,6 +98,9 @@ type Party interface {
 	//
 	// Example: https://github.com/kataras/iris/tree/master/_examples/mvc/middleware/without-ctx-next
 	SetExecutionRules(executionRules ExecutionRules) Party
+	// SetRegisterRule sets a `RouteRegisterRule` for this Party and its children.
+	// Available values are: RouteOverride (the default one), RouteSkip and RouteError.
+	SetRegisterRule(rule RouteRegisterRule) Party
 	// Handle registers a route to the server's router.
 	// if empty method is passed then handler(s) are being registered to all methods, same as .Any.
 	//
@@ -183,6 +186,11 @@ type Party interface {
 	// Any registers a route for ALL of the http methods
 	// (Get,Post,Put,Head,Patch,Options,Connect,Delete).
 	Any(registeredPath string, handlers ...context.Handler) []*Route
+	// CreateRoutes returns a list of Party-based Routes.
+	// It does NOT registers the route. Use `Handle, Get...` methods instead.
+	// This method can be used for third-parties Iris helpers packages and tools
+	// that want a more detailed view of Party-based Routes before take the decision to register them.
+	CreateRoutes(methods []string, relativePath string, handlers ...context.Handler) []*Route
 	// StaticContent registers a GET and HEAD method routes to the requestPath
 	// that are ready to serve raw static bytes, memory cached.
 	//

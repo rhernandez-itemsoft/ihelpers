@@ -95,7 +95,7 @@ func (f *embeddedFile) Stat() (os.FileInfo, error) {
 }
 
 // func (f *embeddedFile) Name() string {
-// 	return strings.TrimLeft(f.vdir, f.FileInfo.Name())
+// 	return strings.TrimPrefix(f.vdir, f.FileInfo.Name())
 // }
 
 type embeddedFileSystem struct {
@@ -109,7 +109,7 @@ type embeddedFileSystem struct {
 var _ http.FileSystem = (*embeddedFileSystem)(nil)
 
 func (fs *embeddedFileSystem) Open(name string) (http.File, error) {
-	// name = fs.vdir + name <- no need, check the TrimLeft(name, vdir) on names loop and the asset and assetInfo redefined on `HandleDir`.
+	// name = fs.vdir + name <- no need, check the TrimPrefix(name, vdir) on names loop and the asset and assetInfo redefined on `HandleDir`.
 	if d, ok := fs.dirNames[name]; ok {
 		return d, nil
 	}
@@ -221,7 +221,7 @@ func FileServer(directory string, opts ...DirOptions) context.Handler {
 				continue
 			}
 
-			names = append(names, strings.TrimLeft(name, vdir))
+			names = append(names, strings.TrimPrefix(name, vdir))
 		}
 
 		if len(names) == 0 {
@@ -307,7 +307,10 @@ func FileServer(directory string, opts ...DirOptions) context.Handler {
 			sort.Slice(dirs, func(i, j int) bool { return dirs[i].Name() < dirs[j].Name() })
 
 			ctx.ContentType(context.ContentHTMLHeaderValue)
-			ctx.WriteString("<pre>\n")
+			_, err = ctx.WriteString("<pre>\n")
+			if err != nil {
+				return err
+			}
 			for _, d := range dirs {
 				name := d.Name()
 				if d.IsDir() {
@@ -317,10 +320,13 @@ func FileServer(directory string, opts ...DirOptions) context.Handler {
 				// part of the URL path, and not indicate the start of a query
 				// string or fragment.
 				url := url.URL{Path: joinPath("./"+dirName, name)} // edit here to redirect correctly, standard library misses that.
-				ctx.Writef("<a href=\"%s\">%s</a>\n", url.String(), htmlReplacer.Replace(name))
+				_, err = ctx.Writef("<a href=\"%s\">%s</a>\n", url.String(), htmlReplacer.Replace(name))
+				if err != nil {
+					return err
+				}
 			}
-			ctx.WriteString("</pre>\n")
-			return nil
+			_, err = ctx.WriteString("</pre>\n")
+			return err
 		}
 	}
 
@@ -464,8 +470,8 @@ func FileServer(directory string, opts ...DirOptions) context.Handler {
 // Usage:
 // fileserver := FileServer("./static_files", DirOptions {...})
 // h := StripPrefix("/static", fileserver)
-// app.Get("/static/{f:path}", h)
-// app.Head("/static/{f:path}", h)
+// app.Get("/static/{file:path}", h)
+// app.Head("/static/{file:path}", h)
 func StripPrefix(prefix string, h context.Handler) context.Handler {
 	if prefix == "" {
 		return h
