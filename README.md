@@ -1,8 +1,8 @@
 # ihelpers
 helpers
 https://git-scm.com/book/en/v2/Git-Basics-Tagging
-git tag -a v1.0.9 -m "version 1.0.9"
-git push origin v1.0.9
+git tag -a v1.0.10 -m "version 1.0.10"
+git push origin v1.0.10
 
 # para que el tag y los cambios tengan efecto y se puedan descargar hay que ejecutar lo siguiente:
 git push origin master
