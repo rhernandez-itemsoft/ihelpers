@@ -41,8 +41,8 @@ func (def *Definition) JSONResponse(statusCode int, data interface{}, iMessages 
 		msgs = append(msgs, strErr)
 	} else {
 		for _, message := range iMessages {
-			msg := def.Ctx.Values().GetString(message)
-			//msg := i18n.con (def.Ctx, message)
+			//msg := def.Ctx.Values().GetString(message)
+			msg := i18n.con (def.Ctx, message)
 
 			if msg == "" {
 				msgs = append(msgs, message)
