@@ -16,7 +16,7 @@ func Catch(err error, _exit ...bool) {
 	}
 }
 
-//New crea  un error
+// New crea  un error
 func New(_err string) error {
 	return errors.New(_err)
 }
